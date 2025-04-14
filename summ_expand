@@ -1,0 +1,516 @@
+summ_expand <- function(data, 
+                        total_label="Total", 
+                        spread = F,
+                        spread_labels = NULL,
+                        add_agg_columns = NULL,
+                        arrange_on_n = NULL,
+                        remove_cols = NULL,
+                        n_col = "n", 
+                        n_cat = NULL){
+  ## Read Data:----
+  data <- data %>%
+    ungroup() %>%
+    # Rename the provided "N" column to "n"
+    rename(n := !!n_col)
+  
+  ## N Categories:----
+  # How many categories are in the data?
+  # This will either be provided, or if the data is set up properly
+  # with an "n" column right after the catefory columns, we can 
+  # automatically determine this:
+  if(is.null(n_cat)){
+    n_cat = which(colnames(data)=="n")-1
+  }
+  
+  ## List Cat Columns:----
+  # List of Category Columns:
+  # make sure the categories are in the first columns:
+  # Identify the names of the category columns by identifying the 
+  # number of category columns and looping through to get the names
+  # of each
+  cat_cols <- NULL
+  cat = 1
+  for(cat in 1:n_cat){
+    col = colnames(data)[cat]
+    if(cat == 1){
+      cat_cols = col
+    } else{
+      cat_cols = append(cat_cols, col)
+    }
+  }
+  
+  # Spread Data:----
+  if(spread == T){
+    # identify, which data to spread the dataframe on, should always be the 
+    # last column before n
+    spread_col <- colnames(data)[which(colnames(data)=="n")-1]
+    n_cat = n_cat-1
+    cat_cols <- cat_cols[-which(cat_cols==spread_col)]
+    spread_cat <- unique(data[[spread_col]])
+    if(is.null(spread_labels)){
+      spread_labels = unique(data[[spread_col]])
+      spread_labels = paste0(str_replace_all(tolower(spread_labels), "[:space:]", "_"))
+      spread_labels = str_replace_na(spread_labels, "NA")
+      
+    }
+    data_01 <- data %>%
+      rename(spread := !!spread_col) %>%
+      mutate(spread = paste0(str_replace_all(tolower(spread), "[:space:]", "_"))) %>%
+      spread(spread, n) %>%
+      mutate_all(~str_replace_na(., "0")) %>%
+      select(any_of(cat_cols), any_of(spread_labels)) %>%
+      type_convert() %>%
+      adorn_totals(c("col")) %>%
+      rename(n=Total) %>%
+      rename_at(vars(spread_labels), ~str_replace(., "^", "n_")) %>%
+      relocate(n, .after=n_cat)
+  } else{
+    data_01 <- data
+  }
+  
+  # Order:----
+  # Order data frame on N
+  if(!is.null(arrange_on_n)){
+    if(arrange_on_n=="desc"){
+      data_01 <- data_01 %>%
+        arrange(desc(n))
+    }else if(!is.null(arrange_on_n) & arrange_on_n=="ascend"){
+      data_01 <- data_01 %>%
+        arrange(n)
+    }
+  }
+  
+  
+  # Non-Cat Columns:----
+  # list of non_category columns, excluding the N column
+  non_cat_non_n_cols <- colnames(data_01)[which(!colnames(data_01) %in% cat_cols & colnames(data_01) != "n")]
+  
+  
+  # add any other aggregation columns that are needed in the data:
+  add_agg_cols_to_not_cat_columns=NULL
+  var = "urg"
+  agg_type = "perc"
+  if(!is.null(add_agg_columns)){
+    for(agg_type in add_agg_columns){
+      add = agg_type
+      add_agg_cols_to_not_cat_columns = append(add_agg_cols_to_not_cat_columns, add)
+      for(var in spread_labels){
+        add = paste0(agg_type,"_", var)
+        add_agg_cols_to_not_cat_columns = append(add_agg_cols_to_not_cat_columns, add)
+      }
+    }
+    # order the non category columns:
+    non_cat_non_n_cols <- append(non_cat_non_n_cols, add_agg_cols_to_not_cat_columns)
+  }
+  
+  # Order non-category columns
+  if(length(non_cat_non_n_cols)>0 & spread==T){
+    # create a general list of the hierarcy of aggreagtion types that are posisble. 
+    order <- as.data.frame(c("perc", "perc_cat", "perc_act", "n_spread","perc_cat_spread","perc_spread", 
+                             "mean", "sd", "min", "max")) %>%
+      rename(type = 1) %>%
+      mutate(order = row_number())
+    # create the ordered list of the spread labels, according to what was supplied by the user. 
+    order_spread <- as.data.frame(spread_labels) %>%
+      rename(spread = 1) %>%
+      mutate(order_spread= row_number())
+    # gather the non-category columns and join in the orders from above
+    non_cat_non_n_cols_df <- as.data.frame(non_cat_non_n_cols) %>%
+      rename(var = 1) %>%
+      mutate(type = case_when(
+        str_detect(var, str_c(spread_labels, collapse = "|")) 
+        ~ paste0(str_remove(var, str_c(spread_labels, collapse = "|")), "spread"), 
+        T ~ var
+      )) %>%
+      mutate(spread = str_extract(var, str_c(spread_labels, collapse = "|"))) %>%
+      left_join(order) %>%
+      left_join(order_spread) %>%
+      mutate(order_spread = case_when(
+        is.na(order_spread) ~ 0, 
+        T ~ order_spread
+      )) %>%
+      arrange(order_spread, order) %>%
+      # removeing "perc_cat", because it is the percent n/n, which is always going 
+      # to be 100, so it doesn't make sense to have in the data. 
+      filter(var!="perc_cat") %>%
+      filter(!var %in% remove_cols)
+    non_cat_non_n_cols <- non_cat_non_n_cols_df$var
+    
+  }
+  
+  # Start Expand Table:----
+  # Create the initial frame work of the expanded table that will be created, 
+  # This creates a column for each category in an otherwise blank data frame
+  col_num=1
+  data_temp = data_frame(NULL)
+  for(col_num in 1:(n_cat)){
+    col_n_temp = nrow(unique(data_01[col_num])) 
+    
+    col_names_temp <- unique(data_01[col_num])
+    
+    assign(paste0("col", col_num, "_n"), col_n_temp)
+    assign(paste0("col", col_num, "_names"), col_names_temp)
+    
+    col_n_name = paste0("col", col_num)
+    
+    data_temp <- data_temp %>%
+      mutate(temp_col = NA) %>%
+      rename(!!col_n_name:=temp_col)
+  }
+  
+  
+  # Add to the frame work, a column 0, for the grand total, add back in a space 
+  # for "n" data to go, and a "cat" column which will identify the expanded 
+  # categories, as they expand and add together. 
+  data_temp_01 <- data_temp %>%
+    mutate(col0 = "", .before=col1) %>%
+    mutate(n = NA) %>%
+    mutate(cat = "") %>%
+    # Add a row for the grand total. 
+    add_row(col0 = total_label, 
+            n = sum(data$n), 
+            cat = "cat0")
+  
+  data <- data_01 
+  
+  # Add Non-Cat Columns:----
+  # Calculate the aggregated totals for the grand total row
+  col = 1
+  # cycle through the non category columns
+  if(length(non_cat_non_n_cols)>0){
+    for(col in 1:length(non_cat_non_n_cols)){
+      # add the non category column
+      data_temp_01 <- data_temp_01 %>%
+        mutate(temp = NA) %>%
+        rename(!!non_cat_non_n_cols[col]:=temp)
+      
+      # Cycle through all non category columns, and add the aggragted functions
+      # that match the name of the column. For. grand total row only for now. 
+      col_name=non_cat_non_n_cols[col]
+      row_num = 1
+      
+      if(col_name %in% c("perc_act")){
+        data_temp_01[[col_name]][row_num] = data_temp_01$n[1]/nrow(rppr_actv)
+      }else if(str_detect(tolower(col_name), "^perc_cat")){
+        data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[paste0("n", str_remove(col_name, "perc_cat"))]]), na.rm=T)/data_temp_01$n[1]
+      }else if(str_detect(tolower(col_name), "perc|pct|%|percent")){
+        data_temp_01[[col_name]][row_num] = 1
+      }else if(str_detect(tolower(col_name), "^n$|n_|_n|total|num|number|tot_|_tot|^tot$")){
+        data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]]), na.rm=T)
+      }else if(str_detect(tolower(col_name), "ave. |average|_ave|_ave|mean")){
+        data_temp_01[[col_name]][row_num] = round(mean(as.numeric(data[[col_name]]), na.rm=T), 1)
+      } else if(str_detect(tolower(col_name), "max")){
+        data_temp_01[[col_name]][row_num] = round(max(as.numeric(data[[col_name]]), na.rm=T), 1)
+      } else if(str_detect(tolower(col_name), "min")){
+        data_temp_01[[col_name]][row_num] = round(min(as.numeric(data[[col_name]]), na.rm=T), 1)
+      } else{
+        data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]]), na.rm=T)
+      }
+    }
+  }
+  
+  
+  # identify the number of categories in column 1:
+  col1_n = length((unique(data[[colnames(data)[1]]])))
+  
+  # Now cycle through all of the rest of the rows, first through category 1, 
+  # then the subcategories for category one, then cat 2, and the subcategories, 
+  # and so on a so forth...
+  col1_cat_num = 1
+  row_num=1
+  for(col1_cat_num in 1:col1_n){
+    # Identify the highest most category name in column one
+    col1_cat_name = (col1_names[[1]])[col1_cat_num]
+    # Grab the name of column 1
+    col1_var_name = names(col1_names)
+    
+    # Add a row that you will add the below information to:
+    data_temp_01 <- data_temp_01 %>%
+      add_row()
+    
+    # move the row counter one to add the below data to one more than 
+    # the last time data was added to a row. 
+    row_num = row_num+1
+    # identify all other rows that are in the same category as the 
+    # current row
+    row_num_summ = which(data[[col1_var_name]]==col1_cat_name)
+    
+    # move the name of the sub category into the final dataframe
+    data_temp_01$col1[row_num] <- as.character(col1_cat_name)
+    # move the name of the category
+    data_temp_01$cat[row_num] = paste0("cat", col1_cat_num)
+    # move the n column
+    data_temp_01$n[row_num] = sum(data$n[row_num_summ])
+    
+    # Cycle through all non category columns and add the appropriot aggregation 
+    # depending on the name of the column. 
+    col = 1
+    
+    if(length(non_cat_non_n_cols)>0){
+      for(col in 1:length(non_cat_non_n_cols)){
+        # target column name
+        col_name = non_cat_non_n_cols[col]
+        
+        # For percentage columns, we need to identify where to obtain the n data for 
+        # the numerator and denominator of the percent:
+        # perc = n
+        # perc_[subcat] = n_[subcat]
+        if(col_name == "perc"){
+          perc_n_col = "n"
+        } else if (str_detect(col_name, "^perc_")){
+          perc_n_col = paste0("n_", str_remove(col_name, "perc_"))
+        }
+        
+        # When calculating the percentage of the n of a sub category over the 
+        # total n of that subcategory, we need idenify where to obtain the 
+        # total n, if the category is one of the column one or highest level categories, 
+        # the total N, needs to be the grand total of the table or the n for cat 0, 
+        # if it is a sub category, the N needs to be the total of the category 
+        # just before the target category.
+        cat_group_n <- data_temp_01$cat[row_num]
+        # current cat is single digit, use cat0 for total N
+        if(str_detect(cat_group_n, "-", negate=T) == T){
+          perc_n_col_cat <- "cat0"
+          # if current cat is not a single digit, just remove one digit, 
+          # from the end of the cat and that should be the N to use
+        } else{
+          perc_n_col_cat <- paste0(str_remove(cat_group_n, "-[:digit:]$"))
+        }
+        
+        
+        # loop through all non category columns:
+        if(str_detect(tolower(col_name), "^n$|^n_")){
+          data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]][row_num_summ]), na.rm=T)
+        }else if(str_detect(tolower(col_name), "^perc_cat")){
+          data_temp_01[[col_name]][row_num] = data_temp_01[[paste0("n", str_remove(col_name, "perc_cat"))]][row_num]/data_temp_01$n[row_num]
+        }else if(col_name %in% c("perc_act")){
+          data_temp_01[[col_name]][row_num] = data_temp_01$n[row_num]/nrow(rppr_actv)
+        }else if(str_detect(tolower(col_name), "^perc")){
+          data_temp_01[[col_name]][row_num] = data_temp_01[[perc_n_col]][row_num]/data_temp_01[[perc_n_col]][which(data_temp_01$cat==perc_n_col_cat)]
+        }else if(str_detect(tolower(col_name), "^n$|n_|_n|total|num|number|tot_|_tot|^tot$")){
+          data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]][row_num_summ]), na.rm=T)
+        }else if(str_detect(tolower(col_name), "ave. |average|_ave|_ave|mean")){
+          data_temp_01[[col_name]][row_num] = round(mean(as.numeric(data[[col_name]][row_num_summ]), na.rm=T), 1)
+        } else if(str_detect(tolower(col_name), "max")){
+          data_temp_01[[col_name]][row_num] = round(max(as.numeric(data[[col_name]][row_num_summ]), na.rm=T), 1)
+        } else if(str_detect(tolower(col_name), "min")){
+          data_temp_01[[col_name]][row_num] = round(min(as.numeric(data[[col_name]][row_num_summ]), na.rm=T), 1)
+        } else{
+          data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]][row_num_summ]), na.rm=T)
+        }
+        
+        # reset variables:
+        perc_n_col = NA
+        perc_n_col_cat = NA
+      }
+    }
+    
+    
+    
+    if(n_cat>1){
+      col2_cat_num = 1
+      for(col2_cat_num in 1:col2_n){
+        col2_cat_name = (col2_names[[1]])[col2_cat_num]
+        col2_var_name = names(col2_names)
+        
+        # Add a row that you will add the below information to:
+        data_temp_01 <- data_temp_01 %>%
+          add_row()
+        
+        row_num = row_num+1
+        row_num_summ = which(data[[col1_var_name]]==col1_cat_name & data[[col2_var_name]]==col2_cat_name)
+        
+        data_temp_01$col2[row_num] <- as.character(col2_cat_name)
+        data_temp_01$cat[row_num] = paste0("cat", col1_cat_num, "-",col2_cat_num)
+        data_temp_01$n[row_num] = sum(data$n[row_num_summ])
+        
+        col=1
+        if(length(non_cat_non_n_cols)>0){
+          for(col in 1:length(non_cat_non_n_cols)){
+            col_name = non_cat_non_n_cols[col]
+            if(col_name == "perc"){
+              perc_n_col = "n"
+            } else if (str_detect(col_name, "^perc_")){
+              perc_n_col = paste0("n_", str_remove(col_name, "perc_"))
+            }
+            
+            # declare the "N" category just before this one, that will be used to 
+            # calculate percentage
+            
+            cat_group_n <- data_temp_01$cat[row_num]
+            # current cat is single digit, use cat0 for total N
+            if(str_detect(cat_group_n, "-", negate=T) == T){
+              perc_n_col_cat <- "cat0"
+              # if current cat is not a single digit, just remove one digit, 
+              # from the end of the cat and that should be the N to use
+            } else{
+              perc_n_col_cat <- paste0(str_remove(cat_group_n, "-[:digit:]$"))
+            }
+            
+            
+            if(str_detect(tolower(col_name), "^n$|^n_")){
+              data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]][row_num_summ]), na.rm=T)
+            }else if(str_detect(tolower(col_name), "^perc_cat")){
+              data_temp_01[[col_name]][row_num] = data_temp_01[[paste0("n", str_remove(col_name, "perc_cat"))]][row_num]/data_temp_01$n[row_num]
+            }else if(col_name %in% c("perc_act")){
+              data_temp_01[[col_name]][row_num] = data_temp_01$n[row_num]/nrow(rppr_actv)
+            }else if(str_detect(tolower(col_name), "^perc")){
+              data_temp_01[[col_name]][row_num] = data_temp_01[[perc_n_col]][row_num]/data_temp_01[[perc_n_col]][which(data_temp_01$cat==perc_n_col_cat)]
+            }else if(str_detect(tolower(col_name), "^n$|n_|_n|total|num|number|tot_|_tot|^tot$")){
+              data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]][row_num_summ]), na.rm=T)
+            }else if(str_detect(tolower(col_name), "ave. |average|_ave|_ave|mean")){
+              data_temp_01[[col_name]][row_num] = round(mean(as.numeric(data[[col_name]][row_num_summ]), na.rm=T), 1)
+            } else if(str_detect(tolower(col_name), "max")){
+              data_temp_01[[col_name]][row_num] = round(max(as.numeric(data[[col_name]][row_num_summ]), na.rm=T), 1)
+            } else if(str_detect(tolower(col_name), "min")){
+              data_temp_01[[col_name]][row_num] = round(min(as.numeric(data[[col_name]][row_num_summ]), na.rm=T), 1)
+            } else{
+              data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]][row_num_summ]), na.rm=T)
+            }
+            perc_n_col = NA
+          }
+        }
+        
+        
+        
+        if(n_cat>2){
+          col3_cat_num = 1
+          for(col3_cat_num in 1:col3_n){
+            col3_cat_name = (col3_names[[1]])[col3_cat_num]
+            col3_var_name = names(col3_names)
+            
+            # Add a row that you will add the below information to:
+            data_temp_01 <- data_temp_01 %>%
+              add_row()
+            
+            row_num = row_num+1
+            row_num_summ = which(data[[col1_var_name]]==col1_cat_name & data[[col2_var_name]]==col2_cat_name & data[[col3_var_name]]==col3_cat_name)
+            
+            data_temp_01$col3[row_num] <- as.character(col3_cat_name)
+            data_temp_01$cat[row_num] = paste0("cat", col1_cat_num, "-",col2_cat_num, "-",col3_cat_num)
+            data_temp_01$n[row_num] = sum(data$n[row_num_summ])
+            
+            if(length(non_cat_non_n_cols)>0){
+              for(col in 1:length(non_cat_non_n_cols)){
+                col_name = non_cat_non_n_cols[col]
+                if(col_name == "perc"){
+                  perc_n_col = "n"
+                } else if (str_detect(col_name, "^perc_")){
+                  perc_n_col = paste0("n_", str_remove(col_name, "perc_"))
+                }
+                
+                # declare the "N" category just before this one, that will be used to 
+                # calculate percentage
+                
+                cat_group_n <- data_temp_01$cat[row_num]
+                # current cat is single digit, use cat0 for total N
+                if(str_detect(cat_group_n, "-", negate=T) == T){
+                  perc_n_col_cat <- "cat0"
+                  # if current cat is not a single digit, just remove one digit, 
+                  # from the end of the cat and that should be the N to use
+                } else{
+                  perc_n_col_cat <- paste0(str_remove(cat_group_n, "-[:digit:]$"))
+                }
+                
+                
+                if(str_detect(tolower(col_name), "^n$|^n_")){
+                  data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]][row_num_summ]), na.rm=T)
+                }else if(str_detect(tolower(col_name), "^perc_cat")){
+                  data_temp_01[[col_name]][row_num] = data_temp_01[[paste0("n", str_remove(col_name, "perc_cat"))]][row_num]/data_temp_01$n[row_num]
+                }else if(col_name %in% c("perc_act")){
+                  data_temp_01[[col_name]][row_num] = data_temp_01$n[row_num]/nrow(rppr_actv)
+                }else if(str_detect(tolower(col_name), "^perc")){
+                  data_temp_01[[col_name]][row_num] = data_temp_01[[perc_n_col]][row_num]/data_temp_01[[perc_n_col]][which(data_temp_01$cat==perc_n_col_cat)]
+                }else if(str_detect(tolower(col_name), "^n$|n_|_n|total|num|number|tot_|_tot|^tot$")){
+                  data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]][row_num_summ]), na.rm=T)
+                }else if(str_detect(tolower(col_name), "ave. |average|_ave|_ave|mean")){
+                  data_temp_01[[col_name]][row_num] = round(mean(as.numeric(data[[col_name]][row_num_summ]), na.rm=T), 1)
+                } else if(str_detect(tolower(col_name), "max")){
+                  data_temp_01[[col_name]][row_num] = round(max(as.numeric(data[[col_name]][row_num_summ]), na.rm=T), 1)
+                } else if(str_detect(tolower(col_name), "min")){
+                  data_temp_01[[col_name]][row_num] = round(min(as.numeric(data[[col_name]][row_num_summ]), na.rm=T), 1)
+                } else{
+                  data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]][row_num_summ]), na.rm=T)
+                }
+                perc_n_col = NA
+              }
+            }
+            
+            
+            
+            if(n_cat>3){
+              col4_cat_num = 1
+              for(col4_cat_num in 1:col4_n){
+                col4_cat_name = (col4_names[[1]])[col4_cat_num]
+                col4_var_name = names(col4_names)
+                
+                # Add a row that you will add the below information to:
+                data_temp_01 <- data_temp_01 %>%
+                  add_row()
+                
+                row_num = row_num+1
+                row_num_summ = which(data[[col1_var_name]]==col1_cat_name & data[[col2_var_name]]==col2_cat_name & data[[col3_var_name]]==col3_cat_name & data[[col4_var_name]]==col4_cat_name)
+                
+                data_temp_01$col4[row_num] <- as.character(col4_cat_name)
+                data_temp_01$cat[row_num] = paste0("cat", col1_cat_num, "-",col2_cat_num, "-",col3_cat_num, "-",col4_cat_num)
+                data_temp_01$n[row_num] = sum(data$n[row_num_summ])
+                
+                if(length(non_cat_non_n_cols)>0){
+                  for(col in 1:length(non_cat_non_n_cols)){
+                    col_name = non_cat_non_n_cols[col]
+                    if(col_name == "perc"){
+                      perc_n_col = "n"
+                    } else if (str_detect(col_name, "^perc_")){
+                      perc_n_col = paste0("n_", str_remove(col_name, "perc_"))
+                    }
+                    
+                    # declare the "N" category just before this one, that will be used to 
+                    # calculate percentage
+                    
+                    cat_group_n <- data_temp_01$cat[row_num]
+                    # current cat is single digit, use cat0 for total N
+                    if(str_detect(cat_group_n, "-", negate=T) == T){
+                      perc_n_col_cat <- "cat0"
+                      # if current cat is not a single digit, just remove one digit, 
+                      # from the end of the cat and that should be the N to use
+                    } else{
+                      perc_n_col_cat <- paste0(str_remove(cat_group_n, "-[:digit:]$"))
+                    }
+                    
+                    
+                    if(str_detect(tolower(col_name), "^n$|^n_")){
+                      data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]][row_num_summ]), na.rm=T)
+                    }else if(str_detect(tolower(col_name), "^perc_cat")){
+                      data_temp_01[[col_name]][row_num] = data_temp_01[[paste0("n", str_remove(col_name, "perc_cat"))]][row_num]/data_temp_01$n[row_num]
+                    }else if(col_name %in% c("perc_act")){
+                      data_temp_01[[col_name]][row_num] = data_temp_01$n[row_num]/nrow(rppr_actv)
+                    }else if(str_detect(tolower(col_name), "^perc")){
+                      data_temp_01[[col_name]][row_num] = data_temp_01[[perc_n_col]][row_num]/data_temp_01[[perc_n_col]][which(data_temp_01$cat==perc_n_col_cat)]
+                    }else if(str_detect(tolower(col_name), "^n$|n_|_n|total|num|number|tot_|_tot|^tot$")){
+                      data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]][row_num_summ]), na.rm=T)
+                    }else if(str_detect(tolower(col_name), "ave. |average|_ave|_ave|mean")){
+                      data_temp_01[[col_name]][row_num] = round(mean(as.numeric(data[[col_name]][row_num_summ]), na.rm=T), 1)
+                    } else if(str_detect(tolower(col_name), "max")){
+                      data_temp_01[[col_name]][row_num] = round(max(as.numeric(data[[col_name]][row_num_summ]), na.rm=T), 1)
+                    } else if(str_detect(tolower(col_name), "min")){
+                      data_temp_01[[col_name]][row_num] = round(min(as.numeric(data[[col_name]][row_num_summ]), na.rm=T), 1)
+                    } else{
+                      data_temp_01[[col_name]][row_num] = sum(as.numeric(data[[col_name]][row_num_summ]), na.rm=T)
+                    }
+                    perc_n_col = NA
+                  }
+                }
+              }
+            }
+          } 
+        }
+      }
+    }
+  }
+  
+  summ_expand_out <<- data_temp_01 %>%
+    mutate_all(~as.character(.)) %>%
+    mutate_all(~str_replace_all(., "NaN", "0")) %>%
+    type.convert()
+  #End Expand:----
+}
