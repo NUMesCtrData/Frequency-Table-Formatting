@@ -1,0 +1,81 @@
+choose_color_scheme <- function(color_scheme_custom="Navy"){
+  if(color_scheme_custom == "Red-Orange"){
+    level0 = "#AA5846"
+    level1 = "#CD8069"
+    level2 = "#E1A586"
+    level3 = "#E9CCAC"
+    level4 = "#EEE3CF"
+  }
+  
+  if(color_scheme_custom == "Navy"){
+    level0 = "#4C4C6D"
+    level1 = "#BBDFD8"
+    level2 = "#E4F2E8"
+    level3 = "#FBF9F1"
+    level4 = "#EFEDE6"
+    level5 = "#FBF9F1"
+  }
+  
+  if(color_scheme_custom == "Nature"){
+    level0 = "#646A7A"
+    level1 = "#7F917F"
+    level2 = "#BFC7AF"
+    level3 = "#E1D8CF"
+    level4 = "#F3E8DC"
+  }
+  
+  if(color_scheme_custom == "Fade_Olive_to_Orange"){
+    level0 = "#7B6F51"
+    level1 = "#DBCCB8"
+    level2 = "#FAEEE0"
+    level3 = "#F9E4C8"
+    level4 = "#F4D5A8"
+  }
+  
+  if(color_scheme_custom == "Fade_GreenGray_to_Peach"){
+    level0 = "#96A7A3"
+    level1 = "#D6DAC8"
+    level2 = "#F3EAD5"
+    level3 = "#F7DDC3"
+    level4 = "#E6BA95"
+  }
+  
+  if(color_scheme_custom == "Fade_Olive_to_Peach"){
+    level0 = "#8F9F7B"
+    level1 = "#CCD1AB"
+    level2 = "#F0E5CB"
+    level3 = "#F7DDC3"
+    level4 = "#E6BA95"
+  }
+  
+  if(color_scheme_custom == "Neutrals"){
+    level0 = "#A19882"
+    level1 = "#C2B8A3"
+    level2 = "#E6DDC6"
+    level3 = "#FAF4E1"
+    level4 = "#FAF5E9"
+  }
+  
+  if(color_scheme_custom == "Grays"){
+    level0 = "#A6A6A6"
+    level1 = "#BFBFBF"
+    level2 = "#D9D9D9"
+    level3 = "#F2F2F2"
+    level4 = "#F8F8F8"
+  }
+  
+  if(color_scheme_custom == "Strawberry"){
+    level0 = "#34626C"
+    level1 = "#86ABA1"
+    level2 = "#DFF3E3"
+    level3 = "#F1AE89"
+    level4 = "#D68060"
+  }
+  
+  level0 <<- level0
+  level1 <<- level1
+  level2 <<- level2
+  level3 <<- level3
+  level4 <<- level4
+  level5 <<- level5
+}
