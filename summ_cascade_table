@@ -1,0 +1,145 @@
+summ_cascade_table <- function(data, 
+                               color_scheme_custom="Navy", 
+                               width_cat_col= 3, 
+                               width_n_cols = .4, 
+                               merge_headers = F, 
+                               merge_values = NULL,
+                               merge_labels = NULL){
+  
+  # This function takes data with at least two categorical columns, 
+  # summarized and aggrgated in at least one "n" column as well as 
+  # other agregated columns after N. 
+  data_02 <- data %>%
+    select(-cat) %>%
+    # Transform all percent columns to percents. 
+    mutate_at(vars(contains("pct")), ~ paste0(round(as.numeric(.)*100, 2), "%")) %>%
+    mutate_at(vars(contains("perc")), ~ paste0(round(as.numeric(.)*100, 2), "%")) %>%
+    mutate_at(vars(contains("%")), ~ paste0(round(as.numeric(.)*100, 2), "%")) %>%
+    flextable() %>%
+    bg(bg="white", part = "all", source = j)
+  
+  
+  choose_color_scheme(color_scheme_custom=color_scheme_custom)
+  choose_color_scheme(color_scheme_custom="Navy")
+  
+  # merge cells vertically to wrap text 
+  row=2
+  for(row in 1:nrow(data)){
+    
+    # Calulate the category number, the by the number of dashes. 
+    # Categroy 0 = the total row
+    # Category 1 = the first grouped category, determined by no dashes in the cat column. 
+    # Category 2 = the second group cat, determined by 1 dash in cat
+    # Category 3 = the third group cat, determined by 2 dashes in cat
+    # Category 4 = the fourth group cat, determined by 3 dashes in cat
+    cat_num = str_count(data$cat[row], "-")+1
+    
+    if(data$cat[row] == "cat0") {
+      cat_num=0
+      row_color = level1
+      
+    }else if(cat_num == 1){
+      row_color = level2
+    }else if(cat_num == 2){
+      row_color = level3 
+    }else if(cat_num == 3){
+      row_color = level4
+    }else if(cat_num == 4){
+      row_color = level5
+    }
+    
+    # adding 1 to the cat_num is important to determine where to start the merging 
+    # of columns. For example, category 1 always starts at column 2, so adding 1 
+    # to the cat num results in where to start the merge. 
+    cat_num_2 = cat_num + 1
+    
+    # the number of columns, where is the last category column. This is neccessary to 
+    # identify because the last category column needs to be a wider width than the others.
+    # that width can be specified by the user. 
+    n_cat = length(colnames(data)[which(str_detect(colnames(data), "col[:digit:]+"))])
+    
+    # This is the total number of columns in the data (minus the cat column)
+    col_num_sum = ncol(data)-1
+    
+    # the number non category columns. 
+    n_cols = col_num_sum-n_cat
+    
+    # with the above designations, assign color, borders, and merging
+    data_02 <- data_02 %>%
+      merge_at(i = row, j = cat_num_2:(col_num_sum-n_cols)) %>%
+      flextable::border(i = row,
+                        j = cat_num_2:col_num_sum,
+                        border.top = fp_border(color = "black", width=.5), 
+                        border.bottom = fp_border(color = "black", width=.5), 
+                        border.left = fp_border(color = "black", width=.5), 
+                        border.right = fp_border(color = "black", width=.5)) %>%
+      bg(i = row,
+         j = cat_num_2:col_num_sum,
+         bg = row_color)
+    
+  }
+  
+  
+  # Now assign widths according to user input, a standard hight, padding, and theme. 
+  data_03 <- data_02 %>%
+    width(j = 1:(n_cat-1), width=.4, unit = "in") %>%
+    width(j = n_cat, width=width_cat_col, unit = "in") %>%
+    width(j = (n_cat+1):(ncol(data)-1), width=width_n_cols, unit = "in") %>%
+    height_all(height=.25, part = "body", unit = "in") %>%
+    height_all(height=.25, part = "header", unit = "in") %>%
+    hrule(rule = "exact") %>%
+    padding(padding.top = 1.5, part = "all") %>%
+    padding(padding.bottom = 1.5, part = "all") %>%
+    flextable::border(i = 1:(nrow(data)),
+                      j = 1,
+                      border.left = fp_border(color = "black")) %>%
+    flextable::border(i = 1:nrow(data),
+                      j = col_num_sum,
+                      border.right = fp_border(color = "black")) %>%
+    flextable::border(i = 1:nrow(data),
+                      border.bottom = fp_border(color = "black", width=.5)) %>%
+    flextable::border(i = nrow(data),
+                      border.bottom = fp_border(color = "black")) %>%
+    merge_at(j=1:n_cat, part="header") %>%
+    # rename commonly used columns:
+    set_header_labels(n = "N",
+                      urg = "N",
+                      col0="") %>%
+    set_header_labels(num= "N",
+                      perc = "%",
+                      n_urg = "N",
+                      perc_cat_urg = "%",
+                      perc_urg = "% of URG",
+                      n_nurg = "N",
+                      perc_cat_nurg = "%",
+                      perc_nurg = "% of Non-URG",
+                      col0 = "",
+                      col1 = "", 
+                      n_non_urg = "N", 
+                      perc_non_urg = "% of Non-URG", 
+                      perc_cat_non_urg = "%")
+  
+  # assign header columns based on user input
+  if(merge_headers==T){
+    data_03 <- data_03 %>%
+      add_header_row(top = TRUE, values = c(merge_labels), 
+                     colwidths = c(merge_values))
+  }
+  
+  # add the border to the header, align the border center, bold the header, 
+  # and make it white. 
+  data_04 <- data_03 %>%
+    flextable::border(
+      border.top = fp_border(color = "black", width=.5),
+      border.bottom = fp_border(color = "black", width=.5),
+      border.left = fp_border(color = "black", width=.5),
+      border.right = fp_border(color = "black", width=.5), part="header") %>%
+    bg(bg = level0, part="header") %>%
+    align(align = "center", part = "header") %>%
+    bold(bold = TRUE, part = "header") %>%
+    color(color="white", part = "header")
+  
+  # return completed table
+  summ_cascade_table_out <<- data_04
+  return(summ_cascade_table_out)
+}
