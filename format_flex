@@ -1,0 +1,350 @@
+format_flex <- function(data, 
+                        color_scheme_custom="Navy",
+                        total_label = "Total",
+                        n_cat = NULL,
+                        arrange_on_n = NULL,
+                        add_agg_columns = NULL, 
+                        spread = F, 
+                        spread_labels = NULL,
+                        width_cat_col= 3, 
+                        width_n_cols = .4, 
+                        merge_headers = F, 
+                        merge_values = NULL,
+                        merge_labels = NULL, 
+                        round_to_n = 0, 
+                        remove_cols=NULL){
+  
+  # This function is for most tables that have one categorical 
+  # variable in the first column, followed by an N column, and can allow
+  # for n, %, mean, ave. columns and formats those columns and adds a total
+  # column to the first row which the sums up the categorical aggregate data. 
+  
+  data <- data %>%
+    # turn any percent columns into percentages:
+    mutate_at(vars(contains("pct")), ~ paste0(round(.*100, 2), "%")) %>%
+    mutate_at(vars(contains("perc")), ~ paste0(round(.*100, 2), "%")) %>%
+    mutate_at(vars(contains("%")), ~ paste0(round(.*100, 2), "%")) %>%
+    ungroup() 
+  
+  ## N Categories:----
+  # How many categories are in the data?
+  # This will either be provided, or if the data is set up properly
+  # with an "n" column right after the catefory columns, we can 
+  # automatically determine this:
+  if(is.null(n_cat)){
+    n_cat = which(colnames(data)=="n")-1
+  }
+  
+  ## List Cat Columns:----
+  # List of Category Columns:
+  # make sure the categories are in the first columns:
+  # Identify the names of the category columns by identifying the 
+  # number of category columns and looping through to get the names
+  # of each
+  cat_cols <- NULL
+  cat = 1
+  for(cat in 1:n_cat){
+    col = colnames(data)[cat]
+    if(cat == 1){
+      cat_cols = col
+    } else{
+      cat_cols = append(cat_cols, col)
+    }
+  }
+  
+  # Spread Data:----
+  if(spread == T){
+    # identify, which data to spread the dataframe on, should always be the 
+    # last column before n
+    spread_col <- colnames(data)[which(colnames(data)=="n")-1]
+    n_cat = n_cat-1
+    cat_cols <- cat_cols[-which(cat_cols==spread_col)]
+    spread_cat <- unique(data[[spread_col]])
+    if(is.null(spread_labels)){
+      spread_labels = unique(data[[spread_col]])
+      spread_labels = paste0(str_replace_all(tolower(spread_labels), "[:space:]", "_"))
+      spread_labels = str_replace_na(spread_labels, "NA")
+      
+    }
+    data_01 <- data %>%
+      rename(spread := !!spread_col) %>%
+      mutate(spread = paste0(str_replace_all(tolower(spread), "[:space:]", "_"))) %>%
+      spread(spread, n) %>%
+      mutate_all(~str_replace_na(., "0")) %>%
+      select(any_of(cat_cols), any_of(spread_labels)) %>%
+      type_convert() %>%
+      adorn_totals(c("col")) %>%
+      rename(n=Total) %>%
+      rename_at(vars(spread_labels), ~str_replace(., "^", "n_")) %>%
+      relocate(n, .after=n_cat)
+  } else{
+    data_01 <- data
+  }
+  
+  data <- data_01
+  
+  # Order:----
+  # Order data frame on N
+  if(!is.null(arrange_on_n)){
+    if(arrange_on_n=="desc"){
+      data <- data %>%
+        arrange(desc(n))
+    }else if(!is.null(arrange_on_n) & arrange_on_n=="ascend"){
+      data <- data %>%
+        arrange(n)
+    }
+  }
+  
+  
+  # Non-Cat Columns:----
+  # list of non_category columns, excluding the N column
+  non_cat_non_n_cols <- colnames(data)[which(!colnames(data) %in% cat_cols & !colnames(data) %in% c("n", "col0"))]
+  
+  
+  # add any other aggregation columns that are needed in the data:
+  add_agg_cols_to_not_cat_columns=NULL
+  non_cat_non_n_cols = NULL
+  var = "urg"
+  agg_type = "perc"
+  if(!is.null(add_agg_columns)){
+    for(agg_type in add_agg_columns){
+      add = agg_type
+      add_agg_cols_to_not_cat_columns = append(add_agg_cols_to_not_cat_columns, add)
+      if(spread == T){
+        for(var in spread_labels){
+          add = paste0(agg_type,"_", var)
+          add_agg_cols_to_not_cat_columns = append(add_agg_cols_to_not_cat_columns, add)
+        }
+      }
+    }
+    # order the non category columns:
+    non_cat_non_n_cols <- append(non_cat_non_n_cols, add_agg_cols_to_not_cat_columns)
+  }
+  
+  # Order non-category columns
+  if(length(non_cat_non_n_cols)>0 & spread==T){
+    # create a general list of the hierarcy of aggreagtion types that are posisble. 
+    order <- as.data.frame(c("perc", "perc_cat", "perc_act", "n_spread","perc_cat_spread","perc_spread", 
+                             "mean", "sd", "min", "max")) %>%
+      rename(type = 1) %>%
+      mutate(order = row_number())
+    # create the ordered list of the spread labels, according to what was supplied by the user. 
+    order_spread <- as.data.frame(spread_labels) %>%
+      rename(spread = 1) %>%
+      mutate(order_spread= row_number())
+    # gather the non-category columns and join in the orders from above
+    non_cat_non_n_cols_df <- as.data.frame(non_cat_non_n_cols) %>%
+      rename(var = 1) %>%
+      mutate(type = case_when(
+        str_detect(var, str_c(spread_labels, collapse = "|")) 
+        ~ paste0(str_remove(var, str_c(spread_labels, collapse = "|")), "spread"), 
+        T ~ var
+      )) %>%
+      mutate(spread = str_extract(var, str_c(spread_labels, collapse = "|"))) %>%
+      left_join(order) %>%
+      left_join(order_spread) %>%
+      mutate(order_spread = case_when(
+        is.na(order_spread) ~ 0, 
+        T ~ order_spread
+      )) %>%
+      arrange(order_spread, order) %>%
+      # removeing "perc_cat", because it is the percent n/n, which is always going 
+      # to be 100, so it doesn't make sense to have in the data. 
+      filter(var!="perc_cat") %>%
+      filter(!var %in% remove_cols)
+    non_cat_non_n_cols <- non_cat_non_n_cols_df$var
+    
+  }
+  
+  data_01 <- data %>%
+    # add a column and row to the front of the data set with the total label, 
+    # reorder so that row is on top.
+    mutate(order= row_number()) %>%
+    mutate(col0 = NA) %>%
+    select(col0, everything()) %>%
+    add_row(col0 = total_label, order=0) %>%
+    arrange(order) %>%
+    select(-order)
+  
+  # Loop through the columns to add the aggregate sums to the top row
+  # The type of aggragate function used is based on what the name of the column is. 
+  col_num=5
+  for(col_num in 1:length(colnames(data))){
+    col_name = colnames(data)[col_num]
+    col_name_sub1 = colnames(data)[(col_num-1)]
+    col_name_sub2 = colnames(data)[(col_num-2)]
+    col_name_sub3 = colnames(data)[(col_num-3)]
+    if(col_name %in% c("perc_act")){
+      data_01[[col_name]][1] = paste0(round(((data_01$num[1]/nrow(rppr_actv))*100), 2), "%")
+    }else if(col_name %in% c("perc_cat_urg", "perc_cat_nurg")){
+      data_01[[col_name]][1] = paste0(round(((data_01[[paste0("n", str_remove(col_name, "perc_cat"))]][1]/data_01$num[1])*100), 2), "%")
+    }else if(str_detect(tolower(col_name), "perc|pct|%|percent")){
+      data_01[[col_name]][1] = "100%"
+    }else if(str_detect(tolower(col_name), "n |^n$|n_|_n|total|num|number|tot_|_tot|^tot$")){
+      data_01[[col_name]][1] = sum(as.numeric(data_01[[col_name]]), na.rm=T)
+    }else if(str_detect(tolower(col_name), "ave. |average|_ave|_ave|mean")){
+      data_01[[col_name]][1] = round(mean(as.numeric(data_01[[col_name]]), na.rm=T), 1)
+    } else if(str_detect(tolower(col_name), "max")){
+      data_01[[col_name]][1] = round(max(as.numeric(data_01[[col_name]]), na.rm=T), 1)
+    } else if(str_detect(tolower(col_name), "min")){
+      data_01[[col_name]][1] = round(min(as.numeric(data_01[[col_name]]), na.rm=T), 1)
+    } 
+    
+  }
+  
+  # Loop through any additional aggregation columns that are needed
+  col_num=5
+  add_col_name = "perc"
+  for(add_col_name in non_cat_non_n_cols){
+    
+    data_01 <- data_01 %>%
+      mutate(temp_add_agg = NA) %>%
+      rename(!!add_col_name:=temp_add_agg)
+    
+    # The first aggregated ROW needs to be treated differently. 
+    col_name = add_col_name
+    for(row in 1:nrow(data_01)){
+      if(row == 1){
+        if(col_name %in% c("perc_act")){
+          data_01[[col_name]][1] = paste0(round(((data_01$num[1]/nrow(rppr_actv))*100), 2), "%")
+        }else if(col_name %in% c("perc_cat_urg", "perc_cat_nurg")){
+          data_01[[col_name]][1] = paste0(round(((data_01[[paste0("n", str_remove(col_name, "perc_cat"))]][1]/data_01$num[1])*100), 2), "%")
+        }else if(str_detect(tolower(col_name), "perc|pct|%|percent")){
+          data_01[[col_name]][1] = "1"
+        }else if(str_detect(tolower(col_name), "n |^n$|n_|_n|total|num|number|tot_|_tot|^tot$")){
+          data_01[[col_name]][1] = sum(as.numeric(data_01[[col_name]]), na.rm=T)
+        }else if(str_detect(tolower(col_name), "ave. |average|_ave|_ave|mean")){
+          data_01[[col_name]][1] = round(mean(as.numeric(data_01[[col_name]]), na.rm=T), 1)
+        } else if(str_detect(tolower(col_name), "max")){
+          data_01[[col_name]][1] = round(max(as.numeric(data_01[[col_name]]), na.rm=T), 1)
+        } else if(str_detect(tolower(col_name), "min")){
+          data_01[[col_name]][1] = round(min(as.numeric(data_01[[col_name]]), na.rm=T), 1)
+        } 
+        
+      }
+      # Now loop through the rest of the rows
+      if(row != 1){
+        # For percentage columns, we need to identify where to obtain the n data for 
+        # the numerator and denominator of the percent:
+        # perc = n
+        # perc_[subcat] = n_[subcat]
+        if(col_name == "perc"){
+          perc_n_col = "n"
+        } else if (str_detect(col_name, "^perc_")){
+          perc_n_col = paste0("n_", str_remove(col_name, "perc_"))
+        }
+        
+        # declare the "N" category just before this one, that will be used to 
+        # calculate percentage
+        
+        perc_n_col_cat = "n"
+        
+        
+        # loop through all non category columns:
+        if(str_detect(tolower(col_name), "^n$|^n_")){
+          data_01[[col_name]][row] = sum(as.numeric(data[[col_name]][row_summ]), na.rm=T)
+        }else if(str_detect(tolower(col_name), "^perc_cat")){
+          data_01[[col_name]][row] = data_01[[paste0("n", str_remove(col_name, "perc_cat"))]][row]/data_01$n[row]
+        }else if(col_name %in% c("perc_act")){
+          data_01[[col_name]][row] = data_01$n[row]/nrow(rppr_actv)
+        }else if(str_detect(tolower(col_name), "^perc")){
+          data_01[[col_name]][row] = data_01[[perc_n_col]][row]/sum(as.numeric(data$n))
+        }else if(str_detect(tolower(col_name), "^n$|n_|_n|total|num|number|tot_|_tot|^tot$")){
+          data_01[[col_name]][row] = sum(as.numeric(data[[col_name]][row_summ]), na.rm=T)
+        }else if(str_detect(tolower(col_name), "ave. |average|_ave|_ave|mean")){
+          data_01[[col_name]][row] = round(mean(as.numeric(data[[col_name]][row_summ]), na.rm=T), 1)
+        } else if(str_detect(tolower(col_name), "max")){
+          data_01[[col_name]][row] = round(max(as.numeric(data[[col_name]][row_summ]), na.rm=T), 1)
+        } else if(str_detect(tolower(col_name), "min")){
+          data_01[[col_name]][row] = round(min(as.numeric(data[[col_name]][row_summ]), na.rm=T), 1)
+        } else{
+          data_01[[col_name]][row] = sum(as.numeric(data[[col_name]][row_summ]), na.rm=T)
+        }
+      }
+    }
+  }
+  
+   
+  
+  
+  
+  
+  
+  choose_color_scheme()
+  
+  # format the flex table:
+  data_02 <- data_01 %>%
+    # turn any percent columns into percentages:
+    mutate_at(vars(contains("pct")), ~ case_when(
+      as.numeric(.)<.01 & as.numeric(.)>0 & round_to_n==0 ~ "<1%", 
+      T ~ paste0(round(as.numeric(.)*100, round_to_n), "%")
+    )) %>%
+    mutate_at(vars(contains("perc")), ~ case_when(
+      as.numeric(.)<.01 & as.numeric(.)>0 & round_to_n==0 ~ "<1%", 
+      T ~ paste0(round(as.numeric(.)*100, round_to_n), "%")
+    )) %>%
+    mutate_at(vars(contains("%")), ~ case_when(
+      as.numeric(.)<.01 & as.numeric(.)>0 & round_to_n==0 ~ "<1%", 
+      T ~ paste0(round(as.numeric(.)*100, round_to_n), "%")
+    )) %>%
+    ungroup() %>%
+    flextable() %>%
+    flextable::border(i = 1:nrow(data_01),
+                      j = 1:ncol(data_01),
+                      border.top = fp_border(color = "black", width=.5), 
+                      border.bottom = fp_border(color = "black", width=.5), 
+                      border.left = fp_border(color = "black", width=.5), 
+                      border.right = fp_border(color = "black", width=.5)) %>%
+    flextable::border(
+      border.top = fp_border(color = "black", width=.5), 
+      border.bottom = fp_border(color = "black", width=.5), 
+      border.left = fp_border(color = "black", width=.5), 
+      border.right = fp_border(color = "black", width=.5), part="header") %>%
+    
+    bg(bg = level0, part="header") %>%
+    merge_at(i = 1, j = 1:2) %>%
+    merge_at(i = 1, j = 1:2, part = "header") %>%
+    bg(i = 1,
+       j = 1:ncol(data_01),
+       bg = level1) %>%
+    bg(i = 2:nrow(data_01),
+       j = 2:ncol(data_01),
+       bg = level3) %>%
+    width(j = 1, width=.4, unit = "in") %>%
+    width(j = 2, width=width_cat_col, unit = "in") %>%
+    width(j = 3:ncol(data_01), width=width_n_cols, unit = "in") %>%
+    align(align = "center", part = "header") %>%
+    align(align = "left") %>%
+    bold(bold = TRUE, part = "header") %>%
+    color(color="white", part = "header") %>%
+    set_header_labels(col0 = "",
+                      n = "N", 
+                      perc = "%", 
+                      num = "N", 
+                      pct = "%", 
+                      perc = "%", 
+                      perc_cat_urg = "%", 
+                      perc_cat_nurg = "%",
+                      perc_urg = "% of URG", 
+                      perc_nurg = "% of Non-URG",
+                      n_urg = "N", 
+                      n_nurg = "N", 
+                      n_unkwn = "N", 
+                      perc_cat_unkwn = "%", 
+                      perc_act = "% of Active") %>%
+    height_all(height=.25, part = "body", unit = "in") %>%
+    height_all(height=.25, part = "header", unit = "in") %>%
+    hrule(rule = "exact") %>%
+    padding(padding.top = 1.5, part = "all") %>%
+    padding(padding.bottom = 1.5, part = "all")
+  
+  if(merge_headers==T){
+    data_02 <- data_02 %>%
+      add_header_row(top = TRUE, values = c(merge_labels), 
+                     colwidths = c(merge_values))
+    
+  }
+  
+  
+  return(data_02)
+}
