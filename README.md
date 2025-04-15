@@ -6,6 +6,8 @@ This project contains functions that help automatically format simple to complex
 
 ## Custom Color Selection
 
+### 💡 Link to Code: https://github.com/NUMesCtrData/Frequency-Table-Formatting/blob/main/choose_color_scheme
+
 ### 🔧 Purpose
 
 The function is designed to choose a color scheme by setting a series of global color variables. These colors can be used for setting up plots, themes, or any visualization that requires a consistent color palette.
@@ -35,6 +37,8 @@ choose_color_scheme("Navy")
 A flexible function to transform and summarize categorical data tables, optionally spreading categorical values into separate columns, calculating totals, and adding custom aggregation columns.
 
 ### 🔧 Function Overview: `summ_expand`
+
+### 💡 Link to Code: https://github.com/NUMesCtrData/Frequency-Table-Formatting/blob/main/summ_expand
 
 #### 🔧 Purpose
 
@@ -96,6 +100,8 @@ Output:
 ## Format Cascade Table
 
 ### 🔧 Function Overview: `summ_cascade_table`
+
+### 💡 Link to Code: https://github.com/NUMesCtrData/Frequency-Table-Formatting/blob/main/summ_cascade_table
 
 #### 🔧 Purpose
 
@@ -166,6 +172,8 @@ Output:
 ---
 
 ## Format Flex Table
+
+### 💡 Link to Code: https://github.com/NUMesCtrData/Frequency-Table-Formatting/blob/main/format_flex
 
 Formats a summary data table (typically categorical with N counts and optional additional metrics like percent, mean, etc.) into a styled `flextable` object. Automatically handles aggregation (row and column totals), reshaping (via spread), and aesthetic customizations for publication-ready output.
 
