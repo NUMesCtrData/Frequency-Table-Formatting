@@ -155,11 +155,8 @@ iris_cascade <- iris_expand %>%
 # Show in Viewer
 view(iris_cascade)
 
-<img width="520" alt="Image" src="https://github.com/user-attachments/assets/bc12069a-3a0a-4fe2-b389-98cab1cdda87" />
-
-
 ```
-
+<img width="520" alt="Image" src="https://github.com/user-attachments/assets/bc12069a-3a0a-4fe2-b389-98cab1cdda87" />
 
 ---
 
