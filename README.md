@@ -88,6 +88,7 @@ iris_expnad <- iris %>%
   summ_expand()
 ```
 Output:
+
 <img width="604" alt="Image" src="https://github.com/user-attachments/assets/de35c26b-7c8e-4ded-a23f-0827d84babeb" />
 
 ---
@@ -159,6 +160,7 @@ view(iris_cascade)
 
 ```
 Output:
+
 <img width="520" alt="Image" src="https://github.com/user-attachments/assets/bc12069a-3a0a-4fe2-b389-98cab1cdda87" />
 
 ---
@@ -234,5 +236,6 @@ iris_general <- iris %>%
               width_cat_col=1)
 
 ```
+Output:
 
 <img width="296" alt="Image" src="https://github.com/user-attachments/assets/95bb849b-67ed-4cf3-9ad3-a13b1a869438" />
