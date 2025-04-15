@@ -87,6 +87,8 @@ iris_expnad <- iris %>%
   # Expand, aggregate and cascade:
   summ_expand()
 ```
+Output:
+<img width="604" alt="Image" src="https://github.com/user-attachments/assets/de35c26b-7c8e-4ded-a23f-0827d84babeb" />
 
 ---
 
@@ -156,6 +158,7 @@ iris_cascade <- iris_expand %>%
 view(iris_cascade)
 
 ```
+Output:
 <img width="520" alt="Image" src="https://github.com/user-attachments/assets/bc12069a-3a0a-4fe2-b389-98cab1cdda87" />
 
 ---
@@ -184,4 +187,52 @@ Formats a summary data table (typically categorical with N counts and optional a
 
 #### 🔄 Function Behavior Summary
 
-- **Preprocessing**: Converts any percent-related columns (e.g., `"pct"`,
+### Function Behavior Summary
+
+1. **Preprocessing**
+   - Converts any percent-related columns (e.g., `"pct"`, `"perc"`, `"%"`) to proper percentage strings.
+   - Detects the number of categorical columns if not provided.
+
+2. **Optional Spreading**
+   - Reshapes data wide by a selected category level if `spread = TRUE`, converting counts (`n`) into `n_`.
+
+3. **Sorting**
+   - Orders rows based on total counts (`n`) if specified.
+
+4. **Aggregation**
+   - Adds a total row at the top of the table (with sums, means, max, etc.).
+   - Computes additional aggregates as specified in `add_agg_columns`.
+
+5. **Column Ordering & Cleaning**
+   - Automatically orders non-category columns by defined logic.
+   - Optionally removes specific columns (via `remove_cols`).
+
+6. **Styling (with flextable)**
+   - Applies colors from a custom scheme (`choose_color_scheme()` must be defined externally).
+   - Formats column widths, row heights, padding, alignment, borders, and background colors.
+   - Customizes header labels and optionally merges header cells.
+
+---
+
+### Output
+
+Returns a `flextable` object with:
+
+- Styled and aligned headers and body rows.  
+- Aggregated top row labeled with `total_label`.  
+- Reshaped structure if `spread = TRUE`.  
+- Clean and customizable display of count/percent/statistics columns.
+
+  
+### 💡 Example Usage
+```r
+iris_general <- iris %>%
+  group_by(Species) %>%
+  summarize(n=n()) %>%
+  format_flex(total_label = "Iris Species", 
+              add_agg_columns = "perc", 
+              width_cat_col=1)
+
+```
+
+<img width="296" alt="Image" src="https://github.com/user-attachments/assets/95bb849b-67ed-4cf3-9ad3-a13b1a869438" />
