@@ -71,6 +71,23 @@ A data frame with:
   - `mean`, `min`, `max`: Descriptive statistics.
 - **Totaling & Arrangement**: A grand total row is always added (label set by `total_label`). The data can optionally be sorted based on count values.
 
+### 💡 Example Usage
+
+```r
+iris_expnad <- iris %>%
+  # Transform Petal.Width into a categorical variable
+  mutate(Petal.Width.Cat = case_when(
+    between(Petal.Width,0,0.8) ~ "Petal Width Narrow (0.0-0.8)", 
+    between(Petal.Width,0.9,1.7) ~ "Petal Width Medium (0.9-1.7)", 
+    between(Petal.Width,1.8,2.5) ~ "Petal Width Wide (1.8-2.5)"
+  )) %>%
+  group_by(Species, Petal.Width.Cat) %>%
+  # Obtain the frequency of Species and Petal.Width.Cat
+  summarize(n=n()) %>%
+  # Expand, aggregate and cascade:
+  summ_expand()
+```
+
 ---
 
 ## Format Cascade Table
@@ -113,6 +130,36 @@ Returns a `flextable` object styled as a hierarchical cascade table with:
   - Padding and horizontal rules are applied.
 - **Column Renaming**: Common columns are renamed for clarity (`n → "N"`, `perc → "%"`, and so on).
 - **Optional Header Merging**: If `merge_headers = TRUE`, a custom top header row is added using `merge_labels` and `merge_values`.
+
+### 💡 Example Usage
+
+```r
+iris_expand <- iris %>%
+  # Transform Petal.Width into a categorical variable
+  mutate(Petal.Width.Cat = case_when(
+    between(Petal.Width,0,0.8) ~ "Petal Width Narrow (0.0-0.8)", 
+    between(Petal.Width,0.9,1.7) ~ "Petal Width Medium (0.9-1.7)", 
+    between(Petal.Width,1.8,2.5) ~ "Petal Width Wide (1.8-2.5)"
+  )) %>%
+  group_by(Species, Petal.Width.Cat) %>%
+  # Obtain the frequency of Species and Petal.Width.Cat
+  summarize(n=n()) %>%
+  # Expand, aggregate and cascade:
+  summ_expand(total_label = "Iris Species and Widths")
+
+
+iris_cascade <- iris_expand %>%
+  # format cascade table:
+  summ_cascade_table()
+
+# Show in Viewer
+view(iris_cascade)
+
+<img width="520" alt="Image" src="https://github.com/user-attachments/assets/bc12069a-3a0a-4fe2-b389-98cab1cdda87" />
+
+
+```
+
 
 ---
 
