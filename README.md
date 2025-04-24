@@ -162,7 +162,7 @@ iris_cascade <- iris_expand %>%
   summ_cascade_table()
 
 # Show in Viewer
-view(iris_cascade)
+iris_cascade
 
 ```
 Output:
